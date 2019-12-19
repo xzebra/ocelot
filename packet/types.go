@@ -85,7 +85,7 @@ type (
 )
 
 // ReadNBytes read N bytes from bytes.Reader
-func ReadNBytes(r io.ByteReader, n int) (bs []byte, err error) {
+func ReadNBytes(r DecodeReader, n int) (bs []byte, err error) {
 	bs = make([]byte, n)
 	for i := 0; i < n; i++ {
 		bs[i], err = r.ReadByte()
