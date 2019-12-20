@@ -6,32 +6,30 @@ import (
 	"github.com/Tnze/go-mc/net"
 )
 
-func HandleConn(conn net.Conn) {
-	for {
-		packet, err := conn.ReadPacket()
-		if err != nil {
-			log.Print("info: could't read from player")
-			break
-		}
+func handleConn(conn net.Conn) {
+	defer conn.Close()
 
-		log.Print("debug: received packet with id = ", packet.ID)
+	info, err := handleHandshake(conn)
+	if err != nil {
+		log.Print("debug: couldn't get handshake (", err, ")")
+		return
 	}
 
-	conn.Close()
-}
-
-func HandleLogin() error {
-	// Login process (C = client, S = server)
-	// C→S: Handshake with Next State set to 2 (login)
-
-	// C→S: Login Start
-	// For unauthenticated and localhost connections there is no encryption.
-	// S→C: Encryption Request
-	// Client auth
-	// C→S: Encryption Response
-	// Server auth, both enable encryption
-	// S→C: Set Compression (optional)
-	// S→C: Login Success
-
-	return nil
+	switch info.NextState {
+	case nextStateStatus:
+		handleStatus(conn)
+		// once status has been handled, close connection
+		return
+	case nextStateLogin:
+		err = handleLogin(conn)
+		if err != nil {
+			log.Print("debug: player couldn't login (", err, ")")
+			return
+		}
+		err = handlePlay(conn)
+		if err != nil {
+			log.Print("debug: error while playing (", err, ")")
+			return
+		}
+	}
 }
