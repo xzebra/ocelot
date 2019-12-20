@@ -1,8 +1,10 @@
-package main
+package server
 
 import (
 	"encoding/json"
 	"log"
+
+	"ocelot/global"
 
 	"github.com/Tnze/go-mc/chat"
 	"github.com/Tnze/go-mc/net"
@@ -64,7 +66,7 @@ func handleStatusRequest(conn net.Conn) error {
 
 	status := statusRequestPacket{}
 	status.Version.Name = "1.15.1"
-	status.Version.Protocol = ProtocolVersion
+	status.Version.Protocol = global.ProtocolVersion
 
 	status.Players.Max = 100
 	status.Players.Online = 0

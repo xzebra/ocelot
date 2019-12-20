@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"errors"
@@ -12,7 +12,8 @@ var (
 	errScan       = errors.New("couldn't parse packet fields")
 )
 
-func handleConn(conn net.Conn) {
+// HandleConn handles a client connection
+func HandleConn(conn net.Conn) {
 	defer conn.Close()
 
 	log.Print("info: client stablished connection")
