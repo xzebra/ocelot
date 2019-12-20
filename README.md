@@ -6,17 +6,29 @@
 
 Custom Minecraft server implementation
 
-## Install 🔧
+## USE
+
+### Install :wrench:
 
 ```bash
 > make build
 ```
 
-## TODO 📋
+### Run :arrow_forward:
 
-- [ ] Packet structures
-- [ ] Handshake
+```bash
+> ./ocelot
+```
+
+## DEVELOP
+
+### ToDo :clipboard:
+
+- [x] Handshake
+- [x] Status
 - [ ] Login
-- [ ] Status
 - [ ] Game packets
 
+### CONTRIBUTING :handshake:
+
+Minecraft packet format documented [here](https://wiki.vg/Protocol) is being used.
