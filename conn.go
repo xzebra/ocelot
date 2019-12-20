@@ -1,19 +1,29 @@
 package main
 
 import (
+	"errors"
 	"log"
 
 	"github.com/Tnze/go-mc/net"
 )
 
+var (
+	errConnClosed = errors.New("connection closed")
+	errScan       = errors.New("couldn't parse packet fields")
+)
+
 func handleConn(conn net.Conn) {
 	defer conn.Close()
+
+	log.Print("info: client stablished connection")
 
 	info, err := handleHandshake(conn)
 	if err != nil {
 		log.Print("debug: couldn't get handshake (", err, ")")
 		return
 	}
+
+	log.Print("debug: handshake successful")
 
 	switch info.NextState {
 	case nextStateStatus:

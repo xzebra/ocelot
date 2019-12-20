@@ -20,7 +20,6 @@ const (
 )
 
 var (
-	errNoHandshake     = errors.New("no handshake")
 	errHandshakeFormat = errors.New("wrong handshake packet format")
 )
 
@@ -47,15 +46,20 @@ type handshakePacket struct {
 func handleHandshake(conn net.Conn) (handshakePacket, error) {
 	hp := handshakePacket{}
 
-	packet, err := conn.ReadPacket()
-	if err != nil {
-		log.Print("debug: could't read from player (", err, ")")
-		return hp, errNoHandshake
-	}
+	for {
+		packet, err := conn.ReadPacket()
+		if err != nil {
+			return hp, errConnClosed
+		}
 
-	err = packet.Scan(&hp.ProtocolVersion, &hp.ServerAddress, &hp.ServerPort, &hp.NextState)
-	if err != nil {
-		return hp, errHandshakeFormat
+		err = packet.Scan(&hp.ProtocolVersion,
+			&hp.ServerAddress, &hp.ServerPort,
+			&hp.NextState)
+		if err != nil {
+			log.Print("debug: unknown handshake format")
+		} else {
+			break
+		}
 	}
 
 	return hp, nil
