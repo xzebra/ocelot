@@ -1,12 +1,19 @@
 package server
 
 import (
+	"crypto/sha1"
+	"log"
 	"bytes"
 	"crypto/aes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"time"
+	"strings"
 
 	"ocelot/global"
 
@@ -15,8 +22,13 @@ import (
 	"github.com/Tnze/go-mc/net/packet"
 )
 
+var (
+	httpClient = &http.Client{Timeout: 10 * time.Second}
+)
+
 const (
 	verifyTokenLength = 4
+	authURL           = "https://sessionserver.mojang.com/session/minecraft/hasJoined?username=%s&serverId=%s"
 )
 
 const (
@@ -40,6 +52,7 @@ var (
 	errWrongSecretLength    = errors.New("secret length doesn't match received length")
 	errWrongTokenLength     = errors.New("verify token length doesn't match received length")
 	errVerifyToken          = errors.New("verify token doesn't match")
+	errWrongUUIDFormat 		= errors.New("wrong uuid format")
 )
 
 type encryptionRequestPacket struct {
@@ -109,7 +122,18 @@ func (p *loginSuccessPacket) Marshal() (pk packet.Packet) {
 	)
 }
 
+type authResponse struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Properties []struct {
+		Name      string `json:"name"`
+		Value     string `json:"value"`
+		Signature string `json:"signature"`
+	} `json:"properties"`
+}
+
 func handleLogin(conn net.Conn) error {
+	log.Print("debug: handling login")
 	// Login process (C = client, S = server):
 
 	// C→S: Login Start
@@ -120,15 +144,21 @@ func handleLogin(conn net.Conn) error {
 	// TODO: For unauthenticated and localhost connections there is no encryption.
 
 	// S→C: Encryption Request
-	verifyToken, err := handleEncryptionRequest(conn)
+	publicKey, verifyToken, err := handleEncryptionRequest(conn)
 	if err != nil {
 		return err
 	}
 
 	secret, err := handleEncryptionResponse(conn, verifyToken)
+	if err != nil {
+		return err
+	}
 
 	// Server auth
-	uuid, err := handleServerAuth()
+	auth, err := handleServerAuth(secret, publicKey, username)
+	if err != nil {
+		return err
+	}
 
 	// Both enable AES/CFB8 encryption using the shared secret as both IV and key.
 	block, err := aes.NewCipher(secret)
@@ -143,10 +173,12 @@ func handleLogin(conn net.Conn) error {
 	// TODO: S→C: Set Compression (optional)
 
 	// S→C: Login Success
-	return handleLoginSuccess(conn, username, uuid)
+	return handleLoginSuccess(conn, username, auth.ID)
 }
 
 func handleLoginStart(conn net.Conn) (packet.String, error) {
+	log.Print("debug: handling login start")
+
 	var username packet.String
 
 	received, err := conn.ReadPacket()
@@ -169,7 +201,9 @@ func handleLoginStart(conn net.Conn) (packet.String, error) {
 	return username, nil
 }
 
-func handleEncryptionRequest(conn net.Conn) ([]byte, error) {
+func handleEncryptionRequest(conn net.Conn) ([]byte, []byte, error) {
+	log.Print("debug: handling encryption request")
+
 	// Generate random verify token
 	verifyToken := make([]byte, verifyTokenLength)
 	rand.Read(verifyToken)
@@ -177,7 +211,7 @@ func handleEncryptionRequest(conn net.Conn) ([]byte, error) {
 	// We have to send the public key in PKIX, ASN.1 DER format.
 	asn1PublicKey, err := x509.MarshalPKIXPublicKey(global.PublicKey)
 	if err != nil {
-		return verifyToken, errPublicKeyMarshal
+		return asn1PublicKey, verifyToken, errPublicKeyMarshal
 	}
 
 	conn.WritePacket((&encryptionRequestPacket{
@@ -186,10 +220,12 @@ func handleEncryptionRequest(conn net.Conn) ([]byte, error) {
 		VerifyToken: verifyToken,
 	}).Marshal())
 
-	return verifyToken, nil
+	return asn1PublicKey, verifyToken, nil
 }
 
 func handleEncryptionResponse(conn net.Conn, verifyToken []byte) ([]byte, error) {
+	log.Print("debug: handling encryption response")
+
 	// C→S: Encryption Response
 
 	// (Client auth via mojang web)
@@ -212,7 +248,7 @@ func handleEncryptionResponse(conn net.Conn, verifyToken []byte) ([]byte, error)
 		return nil, err
 	}
 
-	if int(response.VerifyTokenLength) != verifyTokenLength {
+	if int(response.VerifyTokenLength) < verifyTokenLength {
 		return nil, errWrongTokenLength
 	}
 
@@ -233,10 +269,82 @@ func handleEncryptionResponse(conn net.Conn, verifyToken []byte) ([]byte, error)
 	return secret, nil
 }
 
-func handleLoginSuccess(conn net.Conn, username packet.String, uuid packet.String) error {
+func handleLoginSuccess(conn net.Conn, username packet.String, uuid string) error {
+	log.Print("debug: handling login success")
 	conn.WritePacket((&loginSuccessPacket{
-		UUID:     uuid,
+		UUID:     packet.String(uuid),
 		Username: username,
 	}).Marshal())
 	return nil
+}
+
+func handleServerAuth(secret, publicKey []byte, username packet.String) (*authResponse, error) {
+	log.Print("debug: server authing")
+	resp := &authResponse{}
+
+	// concat server id, shared secret and public key
+	serverID := authDigest("", secret, publicKey)
+
+	r, err := httpClient.Get(fmt.Sprintf(authURL, string(username), serverID))
+	if err != nil {
+		log.Print("debug: server authing GET responded ", r.Status)
+		return nil, err
+	}
+	defer r.Body.Close()
+	
+	err = json.NewDecoder(r.Body).Decode(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	// The profile id in the json response has format "11111111222233334444555555555555"
+	// which needs to be changed into format "11111111-2222-3333-4444-555555555555"
+	if len(resp.ID) != 32 {
+		return nil, errWrongUUIDFormat		
+	}
+	resp.ID = fmt.Sprintf("%s-%s-%s-%s-%s",
+		resp.ID[:8], resp.ID[8:12], resp.ID[12:16], resp.ID[16:20], resp.ID[20:32],
+	)
+
+	return resp, nil
+}
+
+// authDigest computes a special SHA-1 digest required for Minecraft web
+// authentication on Premium servers (online-mode=true).
+// Source: http://wiki.vg/Protocol_Encryption#Server
+//
+// Got from: https://gist.github.com/toqueteos/5372776
+func authDigest(serverID string, sharedSecret, publicKey []byte) string {
+	h := sha1.New()
+	h.Write([]byte(serverID))
+	h.Write(sharedSecret)
+	h.Write(publicKey)
+	hash := h.Sum(nil)
+
+	// Check for negative hashes
+	negative := (hash[0] & 0x80) == 0x80
+	if negative {
+		hash = twosComplement(hash)
+	}
+
+	// Trim away zeroes
+	res := strings.TrimLeft(fmt.Sprintf("%x", hash), "0")
+	if negative {
+		res = "-" + res
+	}
+
+	return res
+}
+
+// little endian
+func twosComplement(p []byte) []byte {
+	carry := true
+	for i := len(p) - 1; i >= 0; i-- {
+		p[i] = byte(^p[i])
+		if carry {
+			carry = p[i] == 0xff
+			p[i]++
+		}
+	}
+	return p
 }
