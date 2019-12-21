@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"ocelot/global"
 	"ocelot/server"
 
 	"github.com/Tnze/go-mc/net"
@@ -19,6 +20,8 @@ func main() {
 	colog.Register()
 	colog.SetMinLevel(colog.LDebug)
 	colog.SetDefaultLevel(colog.LInfo)
+
+	global.GenerateKeyPair()
 
 	listener, err := net.ListenMC(serverAddress + ":" + serverPort)
 	if err != nil {

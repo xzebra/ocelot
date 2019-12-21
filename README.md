@@ -26,7 +26,7 @@ Custom Minecraft server implementation
 
 - [x] Handshake
 - [x] Status
-- [ ] Login
+- [x] Login
 - [ ] Game packets
 
 ### CONTRIBUTING :handshake:
