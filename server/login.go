@@ -133,7 +133,6 @@ type authResponse struct {
 }
 
 func handleLogin(conn net.Conn) error {
-	log.Print("debug: handling login")
 	// Login process (C = client, S = server):
 
 	// C→S: Login Start
@@ -177,8 +176,6 @@ func handleLogin(conn net.Conn) error {
 }
 
 func handleLoginStart(conn net.Conn) (packet.String, error) {
-	log.Print("debug: handling login start")
-
 	var username packet.String
 
 	received, err := conn.ReadPacket()
@@ -202,8 +199,6 @@ func handleLoginStart(conn net.Conn) (packet.String, error) {
 }
 
 func handleEncryptionRequest(conn net.Conn) ([]byte, []byte, error) {
-	log.Print("debug: handling encryption request")
-
 	// Generate random verify token
 	verifyToken := make([]byte, verifyTokenLength)
 	rand.Read(verifyToken)
@@ -224,8 +219,6 @@ func handleEncryptionRequest(conn net.Conn) ([]byte, []byte, error) {
 }
 
 func handleEncryptionResponse(conn net.Conn, verifyToken []byte) ([]byte, error) {
-	log.Print("debug: handling encryption response")
-
 	// C→S: Encryption Response
 
 	// (Client auth via mojang web)
@@ -270,7 +263,6 @@ func handleEncryptionResponse(conn net.Conn, verifyToken []byte) ([]byte, error)
 }
 
 func handleLoginSuccess(conn net.Conn, username packet.String, uuid string) error {
-	log.Print("debug: handling login success")
 	conn.WritePacket((&loginSuccessPacket{
 		UUID:     packet.String(uuid),
 		Username: username,
@@ -279,7 +271,6 @@ func handleLoginSuccess(conn net.Conn, username packet.String, uuid string) erro
 }
 
 func handleServerAuth(secret, publicKey []byte, username packet.String) (*authResponse, error) {
-	log.Print("debug: server authing")
 	resp := &authResponse{}
 
 	// concat server id, shared secret and public key
@@ -287,7 +278,6 @@ func handleServerAuth(secret, publicKey []byte, username packet.String) (*authRe
 
 	r, err := httpClient.Get(fmt.Sprintf(authURL, string(username), serverID))
 	if err != nil {
-		log.Print("debug: server authing GET responded ", r.Status)
 		return nil, err
 	}
 	defer r.Body.Close()
