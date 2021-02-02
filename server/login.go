@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/sha1"
-	"log"
 	"bytes"
 	"crypto/aes"
 	"crypto/rand"
